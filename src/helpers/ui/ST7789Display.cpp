@@ -111,7 +111,56 @@ void ST7789Display::drawRect(int x, int y, int w, int h) {
 }
 
 void ST7789Display::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
-  display.drawBitmap(x*SCALE_X + X_OFFSET, y*SCALE_Y + Y_OFFSET, w, h, bits);
+  // Calculate the base position in display coordinates
+  uint16_t startX = x * SCALE_X + X_OFFSET;
+  uint16_t startY = y * SCALE_Y + Y_OFFSET;
+  
+  // Width in bytes for bitmap processing
+  uint16_t widthInBytes = (w + 7) / 8;
+  
+  // Determine the height of each row on the screen
+  uint16_t rowHeight = (uint16_t)(SCALE_Y) + 1;
+  
+  // Process the bitmap row by row
+  for (uint16_t by = 0; by < h; by++) {
+    uint16_t yPos = startY + (uint16_t)(by * SCALE_Y);
+    
+    // For each row, we'll track line segments to draw
+    int16_t lineStart = -1;
+    int16_t lineEnd = -1;
+    
+    // Scan across the row bit by bit
+    for (uint16_t bx = 0; bx <= w; bx++) {
+      bool bitSet = false;
+      
+      // Get the current bit (if we're still within the bitmap width)
+      if (bx < w) {
+        uint16_t byteOffset = (by * widthInBytes) + (bx / 8);
+        uint8_t bitMask = 0x80 >> (bx & 7);
+        bitSet = pgm_read_byte(bits + byteOffset) & bitMask;
+      }
+      
+      // If we found a set bit and haven't started a line segment yet
+      if (bitSet && lineStart < 0) {
+        lineStart = bx;
+      }
+      // If we found an unset bit or reached the end, and we have an active line segment
+      else if ((!bitSet || bx == w) && lineStart >= 0) {
+        lineEnd = bx - 1;
+        
+        // Draw the line segment as a filled rectangle
+        uint16_t segStart = startX + (uint16_t)(lineStart * SCALE_X);
+        uint16_t segWidth = (uint16_t)((lineEnd - lineStart + 1) * SCALE_X) + 1;
+        
+        // Draw a filled rectangle for this line segment
+        // We use rowHeight to ensure no gaps between rows
+        display.fillRect(segStart, yPos, segWidth, rowHeight);
+        
+        // Reset for the next line segment
+        lineStart = -1;
+      }
+    }
+  }
 }
 
 uint16_t ST7789Display::getTextWidth(const char* str) {
