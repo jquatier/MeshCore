@@ -9,6 +9,7 @@ void SerialBLEInterface::begin(const char* device_name, uint32_t pin_code) {
   Bluefruit.begin();
   Bluefruit.setTxPower(4);    // Check bluefruit.h for supported values
   Bluefruit.setName(device_name);
+  Bluefruit.autoConnLed(false);  // turn off the LED during advertising
 
   Bluefruit.Security.setMITM(true);
   Bluefruit.Security.setPIN(charpin);
