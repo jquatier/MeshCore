@@ -33,11 +33,12 @@ static const uint8_t meshcore_logo [] PROGMEM = {
     0xe3, 0xe3, 0x8f, 0xff, 0x1f, 0xfc, 0x3c, 0x0e, 0x1f, 0xf8, 0xff, 0xf8, 0x70, 0x3c, 0x7f, 0xf8, 
 };
 
-void UITask::begin(DisplayDriver* display, NodePrefs* node_prefs, const char* build_date, const char* firmware_version, uint32_t pin_code) {
+void UITask::begin(DisplayDriver* display, NodePrefs* node_prefs, SensorManager* sensors, const char* build_date, const char* firmware_version, uint32_t pin_code) {
   _display = display;
   _auto_off = millis() + AUTO_OFF_MILLIS;
   clearMsgPreview();
   _node_prefs = node_prefs;
+  _sensors = sensors;
   _pin_code = pin_code;
   if (_display != NULL) {
     _display->turnOn();
@@ -53,6 +54,7 @@ void UITask::begin(DisplayDriver* display, NodePrefs* node_prefs, const char* bu
 
   // v1.2.3 (1 Jan 2025)
   sprintf(_version_info, "%s (%s)", version, build_date);
+  
 }
 
 void UITask::msgRead(int msgcount) {
@@ -94,17 +96,17 @@ void renderBatteryIndicator(DisplayDriver* _display, uint16_t batteryMilliVolts)
   if (batteryPercentage > 100) batteryPercentage = 100; // Clamp to 100%
 
   // battery icon
-  int iconWidth = 24;
-  int iconHeight = 12;
+  int iconWidth = 18;
+  int iconHeight = 9;
   int iconX = _display->width() - iconWidth - 5; // Position the icon near the top-right corner
-  int iconY = 0;
+  int iconY = 1;  // Moved down slightly to vertically center it better
   _display->setColor(DisplayDriver::GREEN);
 
   // battery outline
   _display->drawRect(iconX, iconY, iconWidth, iconHeight);
 
   // battery "cap"
-  _display->fillRect(iconX + iconWidth, iconY + (iconHeight / 4), 3, iconHeight / 2);
+  _display->fillRect(iconX + iconWidth, iconY + 2, 2, iconHeight - 4);
 
   // fill the battery based on the percentage
   int fillWidth = (batteryPercentage * (iconWidth - 2)) / 100;
@@ -147,40 +149,145 @@ void UITask::renderCurrScreen() {
     uint16_t textWidth = _display->getTextWidth(_version_info);
     _display->setCursor((_display->width() - textWidth) / 2, 22);
     _display->print(_version_info);
-  } else {  // home screen
-    // node name
-    _display->setCursor(0, 0);
-    _display->setTextSize(1);
-    _display->setColor(DisplayDriver::GREEN);
-    _display->print(_node_prefs->node_name);
+  } else {  // home screen with pages
+    // Render shared header for all pages
+    renderSharedHeader();
+    
+    // Render current page content
+    switch (_current_page) {
+      case 0:
+        renderMainPage();
+        break;
+      case 1:
+        if (_sensors != NULL && _sensors->has_gps) {
+          renderGPSPage();
+        } else {
+          // If GPS not available, wrap back to page 0
+          _current_page = 0;
+          renderMainPage();
+        }
+        break;
+      default:
+        _current_page = 0;
+        renderMainPage();
+        break;
+    }
 
-    // battery voltage
-    renderBatteryIndicator(_display, _board->getBattMilliVolts());
-
-    // freq / sf
-    _display->setCursor(0, 20);
-    _display->setColor(DisplayDriver::YELLOW);
-    sprintf(tmp, "FREQ: %06.3f SF%d", _node_prefs->freq, _node_prefs->sf);
-    _display->print(tmp);
-
-    // bw / cr
-    _display->setCursor(0, 30);
-    sprintf(tmp, "BW: %03.2f CR: %d", _node_prefs->bw, _node_prefs->cr);
-    _display->print(tmp);
-
-    // BT pin
-    if (!_connected && _pin_code != 0) {
-      _display->setColor(DisplayDriver::RED);
-      _display->setTextSize(2);
-      _display->setCursor(0, 43);
-      sprintf(tmp, "Pin:%d", _pin_code);
-      _display->print(tmp);
-      _display->setColor(DisplayDriver::GREEN);
+    // monochrome displays like T114 need to set color for the next frame
+    if(_connected) {
+      _display->setColor(DisplayDriver::LIGHT);
     } else {
-      _display->setColor(DisplayDriver::LIGHT); 
+      _display->setColor(DisplayDriver::GREEN);
     }
   }
   _need_refresh = false;
+}
+
+void UITask::renderSharedHeader() {
+  if (_display == NULL) return;
+  
+  // Node name at top left
+  _display->setCursor(0, 0);
+  _display->setTextSize(1);
+  _display->setColor(DisplayDriver::GREEN);
+  _display->print(_node_prefs->node_name);
+  
+  
+  // Battery voltage
+  renderBatteryIndicator(_display, _board->getBattMilliVolts());
+  
+  // Page indicator using dots - only show if more than 1 page
+  if (_total_pages > 1) {
+    int dotSize = 3;  // Size of each dot
+    int dotSpacing = 6;  // Space between dots
+    int totalWidth = (_total_pages * dotSize) + ((_total_pages - 1) * dotSpacing);
+    int startX = _display->width() - totalWidth - 5;  // Position at lower right with 5px margin
+    int y = _display->height() - 5;  // Position near bottom with 5px margin
+    
+    for (int i = 0; i < _total_pages; i++) {
+      int x = startX + (i * (dotSize + dotSpacing));
+      if (i == _current_page) {
+        _display->setColor(DisplayDriver::GREEN);
+        _display->fillRect(x, y, dotSize, dotSize);
+      } else {
+        _display->setColor(DisplayDriver::LIGHT);
+        _display->drawRect(x, y, dotSize, dotSize);
+      }
+    }
+  }
+}
+
+void UITask::renderMainPage() {
+  if (_display == NULL) return;
+  
+  char tmp[80];
+  
+  // Freq / SF
+  _display->setCursor(0, 16);  // Changed from 20 to 16 to align with LAT
+  _display->setColor(DisplayDriver::YELLOW);
+  sprintf(tmp, "FREQ: %06.3f SF%d", _node_prefs->freq, _node_prefs->sf);
+  _display->print(tmp);
+  
+  // BW / CR
+  _display->setCursor(0, 26);  // Changed from 30 to 26 to maintain 10px spacing
+  sprintf(tmp, "BW: %03.2f CR: %d", _node_prefs->bw, _node_prefs->cr);
+  _display->print(tmp);
+  
+  // BT pin if disconnected
+  if (!_connected && _pin_code != 0) {
+    _display->setColor(DisplayDriver::RED);
+    _display->setTextSize(2);
+    _display->setCursor(0, 43);
+    sprintf(tmp, "Pin:%d", _pin_code);
+    _display->print(tmp);
+    _display->setColor(DisplayDriver::GREEN);
+    _display->setTextSize(1);  // Reset text size
+  }
+}
+
+void UITask::renderGPSPage() {
+  if (_display == NULL || _sensors == NULL) return;
+  
+  char tmp[80];
+  
+  // GPS Status (latitude/longitude)
+  _display->setCursor(0, 16);
+  _display->setTextSize(1);
+  _display->setColor(DisplayDriver::YELLOW);
+  
+  if (_sensors->node_lat != 0.0 || _sensors->node_lon != 0.0) {
+    // Show latitude
+    sprintf(tmp, "LAT: %.6f", _sensors->node_lat);
+    _display->print(tmp);
+    
+    // Show longitude
+    _display->setCursor(0, 26);
+    sprintf(tmp, "LON: %.6f", _sensors->node_lon);
+    _display->print(tmp);
+    
+    // Show altitude
+    _display->setCursor(0, 36);
+    _display->setColor(DisplayDriver::LIGHT);
+    sprintf(tmp, "ALT: %.1fm", _sensors->altitude_meters);
+    _display->print(tmp);
+    
+    // Show satellites
+    _display->setCursor(0, 46);
+    sprintf(tmp, "SATS: %d", _sensors->num_satellites);
+    _display->print(tmp);
+  } else {
+    // No GPS fix
+    _display->print("GPS: No Fix");
+    
+    _display->setCursor(0, 26);
+    _display->setColor(DisplayDriver::RED);
+    _display->print("Searching...");
+    
+    _display->setCursor(0, 36);
+    _display->setColor(DisplayDriver::LIGHT);
+    sprintf(tmp, "SATS: %d", _sensors->num_satellites);
+    _display->print(tmp);
+  }
 }
 
 void UITask::userLedHandler() {
@@ -220,7 +327,14 @@ void UITask::buttonHandler() {
       if (btn_state == USER_BTN_PRESSED) {  // pressed?
         if (_display != NULL) {
           if (_display->isOn()) {
-            clearMsgPreview();
+            // If display is on, check if we have a message preview
+            if (_origin[0] != 0 || _msg[0] != 0) {
+              clearMsgPreview();  // Clear message preview
+            } else {
+              // Switch to next page
+              _current_page = (_current_page + 1) % _total_pages;
+              _need_refresh = true;
+            }
           } else {
             _display->turnOn();
             _need_refresh = true;
@@ -247,6 +361,9 @@ void UITask::buttonHandler() {
 void UITask::loop() {
   buttonHandler();
   userLedHandler();
+  
+  // Update total pages based on GPS availability
+  _total_pages = (_sensors != NULL && _sensors->has_gps) ? 2 : 1;
 
   if (_display != NULL && _display->isOn()) {
     static bool _firstBoot = true;

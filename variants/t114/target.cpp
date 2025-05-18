@@ -101,9 +101,12 @@ bool T114SensorManager::begin() {
   if (gps_detected) {
     MESH_DEBUG_PRINTLN("GPS detected");
     digitalWrite(GPS_EN, LOW);  // Power off GPS until the setting is changed
+    has_gps = true;  // Set base class flag
+    start_gps(); // REMOVE MEEEEEEEEEEEEEEEE
   } else {
     MESH_DEBUG_PRINTLN("No GPS detected");
     digitalWrite(GPS_EN, LOW);
+    has_gps = false;  // Set base class flag
   }
 
   return true;
@@ -111,7 +114,8 @@ bool T114SensorManager::begin() {
 
 bool T114SensorManager::querySensors(uint8_t requester_permissions, CayenneLPP& telemetry) {
   if (requester_permissions & TELEM_PERM_LOCATION) {   // does requester have permission?
-    telemetry.addGPS(TELEM_CHANNEL_SELF, node_lat, node_lon, 0.0f);
+    telemetry.addGPS(TELEM_CHANNEL_SELF, node_lat, node_lon, altitude_meters);
+    telemetry.addGenericSensor(TELEM_CHANNEL_SELF, num_satellites);
   }
   return true;
 }
@@ -125,8 +129,10 @@ void T114SensorManager::loop() {
     if (_location->isValid()) {
       node_lat = ((double)_location->getLatitude())/1000000.;
       node_lon = ((double)_location->getLongitude())/1000000.;
-      MESH_DEBUG_PRINTLN("lat %f lon %f", node_lat, node_lon);
+      altitude_meters = ((double)_location->getAltitude())/1000.0;  // Convert mm to meters
+      MESH_DEBUG_PRINTLN("lat %f lon %f sats %d alt %f", node_lat, node_lon, num_satellites, altitude_meters);
     }
+    num_satellites = _location->getNumSatellites();
     next_gps_update = millis() + 1000;
   }
 }

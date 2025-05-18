@@ -11,6 +11,9 @@
 class SensorManager {
 public:
   double node_lat, node_lon;  // modify these, if you want to affect Advert location
+  bool has_gps = false;  // indicates if GPS hardware is available
+  int num_satellites = 0;  // number of GPS satellites in view
+  double altitude_meters = 0.0;  // altitude in meters
 
   SensorManager() { node_lat = 0; node_lon = 0; }
   virtual bool begin() { return false; }

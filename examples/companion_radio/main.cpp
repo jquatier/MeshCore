@@ -1734,7 +1734,7 @@ void setup() {
   sensors.begin();
 
 #ifdef HAS_UI
-  ui_task.begin(disp, the_mesh.getNodePrefs(), FIRMWARE_BUILD_DATE, FIRMWARE_VERSION, the_mesh.getBLEPin());
+  ui_task.begin(disp, the_mesh.getNodePrefs(), &sensors, FIRMWARE_BUILD_DATE, FIRMWARE_VERSION, the_mesh.getBLEPin());
 #endif
 }
 

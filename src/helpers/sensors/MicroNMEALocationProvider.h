@@ -62,6 +62,14 @@ public :
     long getLatitude() override { return nmea.getLatitude(); }
     long getLongitude() override { return nmea.getLongitude(); }
     bool isValid() override { return nmea.isValid(); }
+    
+    int getNumSatellites() override { return nmea.getNumSatellites(); }
+    
+    long getAltitude() override { 
+        long altitude = 0;
+        nmea.getAltitude(altitude);
+        return altitude;  // in millimeters
+    }
 
     long getTimestamp() override { 
         DateTime dt(nmea.getYear(), nmea.getMonth(),nmea.getDay(),nmea.getHour(),nmea.getMinute(),nmea.getSecond());
